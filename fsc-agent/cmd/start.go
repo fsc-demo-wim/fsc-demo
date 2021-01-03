@@ -3,9 +3,10 @@ package cmd
 import (
 	"time"
 
-	"github.com/henderiw/fsc-demo/fsc-agent/pkg/fscagent"
+	"github.com/fsc-demo-wim/fsc-demo/fsc-agent/pkg/controllers/fscagentctrlr"
+	"github.com/fsc-demo-wim/fsc-demo/fsc-agent/pkg/fscagent"
+	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
-	"k8s.io/klog"
 )
 
 // deployCmd represents the deploy command
@@ -15,7 +16,7 @@ var initCmd = &cobra.Command{
 	Aliases:      []string{"s"},
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		klog.Info("start fsc-agent ...")
+		log.Info("start fsc-agent ...")
 		opts := []fscagent.Option{
 			fscagent.WithDebug(debug),
 			fscagent.WithTimeout(timeout),
@@ -24,22 +25,28 @@ var initCmd = &cobra.Command{
 
 		fa, err := fscagent.New(opts...)
 		if err != nil {
-			klog.Fatalf("Cannot initialize fsc Agent %s", err)
+			log.Fatalf("Cannot initialize fsc Agent %s", err)
 		}
 
+	MAINLOOP:
 		for {
-			if err := fa.CheckLldpDaemon(); err != nil {
-				klog.Errorf("LLDP not setup; %s execute: 'sudo apt-get install lldpd;sudo systemctl restart lldpd' ", err)
-				time.Sleep(5 * time.Second)
-			} else {
-				break
+			if err := fscagentctrlr.CheckLldpDaemon(); err != nil {
+				log.Errorf("LLDP daemon not accesible: %s ", err)
+				time.Sleep(60 * time.Second)
+				continue MAINLOOP
 			}
+
+			if err := fscagentctrlr.CheckNetLinkDaemon(); err != nil {
+				log.Errorf("NetLink daemon not accesible: %s ", err)
+				time.Sleep(60 * time.Second)
+				continue MAINLOOP
+			}
+
+			log.Info("initialize the controllers...")
+			fa.InitControllers()
+
+			return nil
 		}
-
-		klog.Info("initialize the controllers...")
-		fa.InitControllers()
-
-		return nil
 	},
 }
 

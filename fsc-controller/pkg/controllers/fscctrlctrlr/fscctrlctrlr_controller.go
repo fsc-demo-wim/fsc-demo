@@ -2,18 +2,17 @@ package fscctrlctrlr
 
 import (
 	"context"
-	"fmt"
 	"reflect"
 
-	apiv1 "github.com/henderiw/fsc-lib-go/pkg/apis/fsc.henderiw.be/v1"
-	fscclient "github.com/henderiw/fsc-lib-go/pkg/client/clientset/versioned"
-	clfscv1 "github.com/henderiw/fsc-lib-go/pkg/client/clientset/versioned/typed/fsc.henderiw.be/v1"
+	apiv1 "github.com/fsc-demo-wim/fsc-lib-go/pkg/apis/fsc.henderiw.be/v1"
+	fscclient "github.com/fsc-demo-wim/fsc-lib-go/pkg/client/clientset/versioned"
+	clfscv1 "github.com/fsc-demo-wim/fsc-lib-go/pkg/client/clientset/versioned/typed/fsc.henderiw.be/v1"
 	v1 "k8s.io/api/core/v1"
 
-	"github.com/henderiw/fsc-demo/common/msg"
+	"github.com/fsc-demo-wim/fsc-demo/common/msg"
 
-	"github.com/henderiw/fsc-demo/common/controller"
-	"k8s.io/klog"
+	"github.com/fsc-demo-wim/fsc-demo/common/controller"
+	log "github.com/sirupsen/logrus"
 )
 
 const workerthreads = 1
@@ -45,7 +44,7 @@ func NewController(ctx context.Context, fscclient *fscclient.Clientset) controll
 // Run starts the controller.
 func (c *workerController) Run(stopCh chan struct{}, workCh chan msg.CMsg) {
 
-	klog.Info("FSC Controller controller is now running")
+	log.Info("FSC Controller controller is now running")
 
 	// TODO connect to FSP
 
@@ -54,18 +53,18 @@ func (c *workerController) Run(stopCh chan struct{}, workCh chan msg.CMsg) {
 		case m := <-workCh:
 			switch m.Type {
 			case msg.TimerWork:
-				klog.Info("Timer based workloop kickoff")
+				log.Info("Timer based workloop kickoff")
 
 				for k := range c.Node {
-					fmt.Printf("Node: %s, Node Attributes \n", k)
+					log.Debugf("Node: %s, Node Attributes \n", k)
 				}
 
 				for k := range c.NodeTopology {
-					fmt.Printf("NodeTopology: %s, NodeTopology Attributes \n", k)
+					log.Debugf("NodeTopology: %s, NodeTopology Attributes \n", k)
 				}
 
 				for k := range c.WorkLoad {
-					fmt.Printf("Workload: %s, Workload Attributes \n", k)
+					log.Debugf("Workload: %s, Workload Attributes \n", k)
 				}
 
 				newWorkloadStatus := c.constructWorkloadUpdates()
@@ -74,7 +73,7 @@ func (c *workerController) Run(stopCh chan struct{}, workCh chan msg.CMsg) {
 
 				break
 			case msg.NodeUpdate:
-				klog.Infof("NodeUpdate message received %v", reflect.TypeOf(m.KeyValue))
+				log.Infof("NodeUpdate message received %v", reflect.TypeOf(m.KeyValue))
 				switch x := m.KeyValue.(type) {
 				case map[string]*v1.Node:
 					for k, v := range x {
@@ -83,7 +82,7 @@ func (c *workerController) Run(stopCh chan struct{}, workCh chan msg.CMsg) {
 				}
 				break
 			case msg.NodeDelete:
-				klog.Infof("NodeDelete message received %v", reflect.TypeOf(m.KeyValue))
+				log.Infof("NodeDelete message received %v", reflect.TypeOf(m.KeyValue))
 				switch x := m.KeyValue.(type) {
 				case map[string]*v1.Node:
 					for k := range x {
@@ -92,7 +91,7 @@ func (c *workerController) Run(stopCh chan struct{}, workCh chan msg.CMsg) {
 				}
 				break
 			case msg.NodeTopologyUpdate:
-				klog.Infof("NodeTopologyUpdate message received %v", reflect.TypeOf(m.KeyValue))
+				log.Infof("NodeTopologyUpdate message received %v", reflect.TypeOf(m.KeyValue))
 				switch x := m.KeyValue.(type) {
 				case map[string]*apiv1.NodeTopology:
 					for k, v := range x {
@@ -101,7 +100,7 @@ func (c *workerController) Run(stopCh chan struct{}, workCh chan msg.CMsg) {
 				}
 				break
 			case msg.NodeTopologyDelete:
-				klog.Infof("NodeTopologyDelete message received %v", reflect.TypeOf(m.KeyValue))
+				log.Infof("NodeTopologyDelete message received %v", reflect.TypeOf(m.KeyValue))
 				switch x := m.KeyValue.(type) {
 				case map[string]*apiv1.NodeTopology:
 					for k := range x {
@@ -110,7 +109,7 @@ func (c *workerController) Run(stopCh chan struct{}, workCh chan msg.CMsg) {
 				}
 				break
 			case msg.WorkloadUpdate:
-				klog.Infof("WorkloadUpdate message received %v", reflect.TypeOf(m.KeyValue))
+				log.Infof("WorkloadUpdate message received %v", reflect.TypeOf(m.KeyValue))
 				switch x := m.KeyValue.(type) {
 				case map[string]*apiv1.WorkLoad:
 					for k, v := range x {
@@ -120,7 +119,7 @@ func (c *workerController) Run(stopCh chan struct{}, workCh chan msg.CMsg) {
 				break
 			case msg.WorkloadDelete:
 
-				klog.Infof("WorkloadDelete message received %v", reflect.TypeOf(m.KeyValue))
+				log.Infof("WorkloadDelete message received %v", reflect.TypeOf(m.KeyValue))
 				switch x := m.KeyValue.(type) {
 				case map[string]*apiv1.WorkLoad:
 					for k := range x {
@@ -130,10 +129,10 @@ func (c *workerController) Run(stopCh chan struct{}, workCh chan msg.CMsg) {
 				}
 				break
 			default:
-				klog.Info("Wrong message received")
+				log.Info("Wrong message received")
 			}
 		case <-stopCh:
-			klog.Info("Stopping FSC Controller controller")
+			log.Info("Stopping FSC Controller controller")
 			return
 		}
 	}

@@ -1,0 +1,84 @@
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: fsc-serviceaccount
+  namespace: fsc
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: fsc-role
+rules:
+  - apiGroups:
+    - ""
+    resources:
+    - namespaces
+    - pods
+    - podtemplates
+    # - services
+    # - endpoints
+    # - events
+    - configmaps
+    # - secrets
+    # - serviceaccounts
+    verbs:
+    - create
+    - get
+    - list
+    - update
+    - delete
+    - watch
+  - apiGroups:
+    - ""
+    resources:
+    - nodes
+    verbs:
+    - 'get'
+    # - 'patch'
+    - 'list'
+    - 'watch'
+  # - apiGroups:
+  #   - rbac.authorization.k8s.io
+  #   resources:
+  #   - clusterroles
+  #   - clusterrolebindings
+  #   - rolebindings
+  #   - roles
+  #   verbs:
+  #   - create
+  #   - get
+  #   - list
+  #   - update
+  #   - delete
+  #   - watch
+  #   - bind
+  #   - escalate
+  - apiGroups:
+    - fsc.henderiw.be
+    resources:
+    - '*'
+    verbs:
+    - '*'
+  - apiGroups:
+    - 'k8s.cni.cncf.io'
+    resources:
+    - '*'
+    verbs:
+    - '*'
+---
+kind: ClusterRoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: fsc
+subjects:
+- kind: ServiceAccount
+  name: fsc-serviceaccount
+  namespace: fsc
+roleRef:
+  kind: ClusterRole
+  name: fsc-role
+  apiGroup: rbac.authorization.k8s.io
+
+
+

@@ -4,8 +4,9 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/henderiw/fsc-demo/common/controller"
-	"github.com/henderiw/fsc-demo/common/msg"
+	"github.com/fsc-demo-wim/fsc-demo/common/controller"
+	"github.com/fsc-demo-wim/fsc-demo/common/msg"
+	log "github.com/sirupsen/logrus"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/util/runtime"
@@ -13,7 +14,6 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/util/workqueue"
-	"k8s.io/klog"
 )
 
 const workerthreads = 1
@@ -47,21 +47,21 @@ func NewController(ctx context.Context, k8sClient *kubernetes.Clientset) control
 			if err == nil {
 				queue.Add(key)
 			}
-			//klog.Infof("Got ADD event for configmap: %s", key)
+			log.Debugf("Got ADD event for configmap: %s", key)
 		},
 		UpdateFunc: func(old interface{}, new interface{}) {
 			key, err := cache.MetaNamespaceKeyFunc(new)
 			if err == nil {
 				queue.Add(key)
 			}
-			//klog.Infof("Got UPDATE event for configmap object: %s", key)
+			log.Debugf("Got UPDATE event for configmap object: %s", key)
 		},
 		DeleteFunc: func(obj interface{}) {
 			key, err := cache.DeletionHandlingMetaNamespaceKeyFunc(obj)
 			if err == nil {
 				queue.Add(key)
 			}
-			//klog.Infof("Got DELETE event for configmap object: %s", key)
+			log.Debugf("Got DELETE event for configmap object: %s", key)
 
 		},
 	}, cache.Indexers{})
@@ -76,14 +76,14 @@ func (c *configMapController) Run(stopCh chan struct{}, workCh chan msg.CMsg) {
 
 	// Let the workers stop when we are done
 	defer c.queue.ShutDown()
-	klog.Info("Starting configmap controller")
+	log.Info("Starting configmap controller")
 
 	go c.informer.Run(stopCh)
 
 	// Wait for all caches to be synced, before processing items from the queue is started
 	for !c.informer.HasSynced() {
 	}
-	klog.Info("Finished syncing with Kubernetes API (configmap)")
+	log.Info("Finished syncing with Kubernetes API (configmap)")
 
 	if !cache.WaitForCacheSync(stopCh, c.informer.HasSynced) {
 		runtime.HandleError(fmt.Errorf("Timed out waiting for caches to sync"))
@@ -94,10 +94,10 @@ func (c *configMapController) Run(stopCh chan struct{}, workCh chan msg.CMsg) {
 	for i := 0; i < workerthreads; i++ {
 		go c.runWorker()
 	}
-	klog.Info("Configmap controller is now running")
+	log.Info("Configmap controller is now running")
 
 	<-stopCh
-	klog.Info("Stopping Configmap controller")
+	log.Info("Stopping Configmap controller")
 }
 
 func (c *configMapController) runWorker() {
@@ -127,18 +127,17 @@ func (c *configMapController) processNextItem() bool {
 	return true
 }
 
-// process is the business logic of the controller.
+// process is the business logic of the controller.We parse the sriov configmap and send a message to the
+// fscagent controller where the real processing happens
 func (c *configMapController) process(key string) error {
 	obj, exists, err := c.indexer.GetByKey(key)
 	if err != nil {
-		klog.Errorf("Fetching object with key %s from store failed with %v", key, err)
+		log.Errorf("Fetching object with key %s from store failed with %v", key, err)
 		return err
 	}
 
 	if !exists {
-		// Below we will warm up our cache with a Pod, so that we will see a delete for one pod
-		// TO BE CHECKED IF WE CAN OPTIMIZE
-		klog.Infof("ConfigMap %s does not exist anymore", key)
+		log.Infof("ConfigMap %s does not exist anymore", key)
 		m := msg.CMsg{
 			Type:     msg.SriovDelete,
 			KeyValue: *c.sriovConfig,
@@ -148,10 +147,10 @@ func (c *configMapController) process(key string) error {
 	} else {
 		// Note that you also have to check the uid if you have a local controlled resource, which
 		// is dependent on the actual instance, to detect that a Pod was recreated with the same name
-		klog.Infof("Sync/Add/Update for configmap %s", obj.(*v1.ConfigMap).GetName())
+		log.Infof("Sync/Add/Update for configmap %s", obj.(*v1.ConfigMap).GetName())
 
 		if err = sriovParseConfig(obj.(*v1.ConfigMap).Data["config.json"], c.sriovConfig); err != nil {
-			klog.Error(err)
+			log.Error(err)
 		} else {
 			fmt.Printf("sriovConfig: %v \n", *c.sriovConfig)
 			m := msg.CMsg{
@@ -182,7 +181,7 @@ func (c *configMapController) handleErr(err error, key interface{}) {
 	if c.queue.NumRequeues(key) < 5 {
 		// Re-enqueue the key rate limited. Based on the rate limiter on the
 		// queue and the re-enqueue history, the key will be processed later again.
-		klog.Errorf("Error syncing Profile %v: %v", key, err)
+		log.Errorf("Error syncing %v: %v", key, err)
 		c.queue.AddRateLimited(key)
 		return
 	}
@@ -190,5 +189,5 @@ func (c *configMapController) handleErr(err error, key interface{}) {
 
 	// Report to an external entity that, even after several retries, we could not successfully process this key
 	uruntime.HandleError(err)
-	klog.Errorf("Dropping Profile %q out of the queue: %v", key, err)
+	log.Errorf("Dropping Profile %q out of the queue: %v", key, err)
 }

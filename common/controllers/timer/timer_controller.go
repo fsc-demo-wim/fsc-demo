@@ -4,9 +4,9 @@ import (
 	"context"
 	"time"
 
-	"github.com/henderiw/fsc-demo/common/msg"
+	"github.com/fsc-demo-wim/fsc-demo/common/msg"
 
-	"github.com/henderiw/fsc-demo/common/controller"
+	"github.com/fsc-demo-wim/fsc-demo/common/controller"
 	"k8s.io/klog"
 )
 

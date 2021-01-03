@@ -1,12 +1,10 @@
 package fscctrlctrlr
 
 import (
-	"fmt"
-
 	"github.com/google/go-cmp/cmp"
-	"k8s.io/klog"
+	log "github.com/sirupsen/logrus"
 
-	apiv1 "github.com/henderiw/fsc-lib-go/pkg/apis/fsc.henderiw.be/v1"
+	apiv1 "github.com/fsc-demo-wim/fsc-lib-go/pkg/apis/fsc.henderiw.be/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -15,73 +13,73 @@ func (c *workerController) constructWorkloadUpdates() map[string]*apiv1.WorkLoad
 	for wlName, wl := range c.WorkLoad {
 		newWorkloadStatus[wlName] = new(apiv1.WorkLoadStatus)
 		newWorkloadStatus[wlName].Devices = make([]*apiv1.Device, 0)
-		idxdev := 0
-		idxdev2 := 0
-		idxep := 0
-		//idxep2 := 0
+
+		// a workload could have multiple vlans
+		idxNewDev := 0
+		idxNewEpPerDev := make(map[int]int) // keeps track of the endpoints per device index
 		for _, vl := range wl.Spec.Vlans {
 			// pick up vlans in the node topology
 			for _, nt := range c.NodeTopology {
 				for _, d := range nt.Spec.Devices {
-					for _, ep := range d.Endpoints {
-						for _, v := range ep.Vlans {
-							if vl.ID == v.ID {
+					for _, ntep := range d.Endpoints {
+						for _, ntv := range ntep.Vlans {
+							if vl.ID == ntv.ID {
 								newWorkloadStatus[wlName].RunningConfig = wl.Spec
 								devFound := false
-								for _, dev := range newWorkloadStatus[wlName].Devices {
+								for idxCurdev, dev := range newWorkloadStatus[wlName].Devices {
 									if d.Name == dev.Name {
 										// device is found already
 										devFound = true
 										epFound := false
 										for _, endp := range dev.Endpoints {
-											if ep.Name == endp.Name {
+											if ntep.InterfaceIdentifierType == endp.InterfaceIdentifier && ntep.Name == endp.Name {
 												epFound = true
 												vlanFound := false
 												for _, vlan := range endp.Vlans {
-													if v.ID == vlan.ID {
+													if ntv.ID == vlan.ID {
 														vlanFound = true
 													}
 												}
 												if !vlanFound {
-													fmt.Printf("New VLAN dName %s, epName %s, vlanID %d %d %d\n", d.Name, ep.Name, v.ID, idxdev, idxep)
+													log.Debugf("New VLAN dName %s, epName %s, vlanID %d %d %d %d\n", d.Name, ntep.Name, ntv.ID, idxCurdev, idxNewDev, idxNewEpPerDev[idxCurdev])
 													vlan := &apiv1.Vlan{
-														ID: v.ID,
+														ID: ntv.ID,
 													}
-													newWorkloadStatus[wlName].Devices[idxdev].Endpoints[idxep].Vlans = append(newWorkloadStatus[wlName].Devices[idxdev].Endpoints[idxep].Vlans, vlan)
+													newWorkloadStatus[wlName].Devices[idxCurdev].Endpoints[idxNewEpPerDev[idxCurdev]].Vlans = append(newWorkloadStatus[wlName].Devices[idxCurdev].Endpoints[idxNewEpPerDev[idxCurdev]].Vlans, vlan)
 												}
 											}
 										}
 										if !epFound {
-											fmt.Printf("New EP dName %s, epName %s, vlanID %d %d %d\n", d.Name, ep.Name, v.ID, idxdev, idxep)
+											log.Debugf("New EP dName %s, epName %s, vlanID %d %d %d %d\n", d.Name, ntep.Name, ntv.ID, idxCurdev, idxNewDev, idxNewEpPerDev[idxCurdev])
 											// create a new endpoint and vlan
 											endpoint := &apiv1.Endpoint{
-												Name:                    ep.Name,
-												InterfaceIdentifier:     ep.InterfaceIdentifier,
-												InterfaceIdentifierType: ep.InterfaceIdentifierType,
-												MTU:                     ep.MTU,
-												LAG:                     ep.LAG,
+												Name:                    ntep.Name,
+												InterfaceIdentifier:     ntep.InterfaceIdentifier,
+												InterfaceIdentifierType: ntep.InterfaceIdentifierType,
+												MTU:                     ntep.MTU,
+												LAG:                     ntep.LAG,
 												Vlans:                   make([]*apiv1.Vlan, 0),
 											}
-											newWorkloadStatus[wlName].Devices[idxdev].Endpoints = append(newWorkloadStatus[wlName].Devices[idxdev].Endpoints, endpoint)
+											newWorkloadStatus[wlName].Devices[idxCurdev].Endpoints = append(newWorkloadStatus[wlName].Devices[idxCurdev].Endpoints, endpoint)
 											vlan := &apiv1.Vlan{
-												ID: v.ID,
+												ID: ntv.ID,
 											}
-											newWorkloadStatus[wlName].Devices[idxdev].Endpoints[idxep].Vlans = append(newWorkloadStatus[wlName].Devices[idxdev].Endpoints[idxep].Vlans, vlan)
-											idxep++
+											newWorkloadStatus[wlName].Devices[idxCurdev].Endpoints[idxNewEpPerDev[idxCurdev]].Vlans = append(newWorkloadStatus[wlName].Devices[idxCurdev].Endpoints[idxNewEpPerDev[idxCurdev]].Vlans, vlan)
+											idxNewEpPerDev[idxCurdev]++
 										}
 									}
 								}
 								if !devFound {
-									fmt.Printf("New Switch dName %s, epName %s, vlanID %d %d\n", d.Name, ep.Name, v.ID, idxdev)
+									log.Debugf("New Switch dName %s, epName %s, vlanID %d %d\n", d.Name, ntep.Name, ntv.ID, idxNewDev)
 									vlan := &apiv1.Vlan{
-										ID: v.ID,
+										ID: ntv.ID,
 									}
 									endpoint := &apiv1.Endpoint{
-										Name:                    ep.Name,
-										InterfaceIdentifier:     ep.InterfaceIdentifier,
-										InterfaceIdentifierType: ep.InterfaceIdentifierType,
-										MTU:                     ep.MTU,
-										LAG:                     ep.LAG,
+										Name:                    ntep.Name,
+										InterfaceIdentifier:     ntep.InterfaceIdentifier,
+										InterfaceIdentifierType: ntep.InterfaceIdentifierType,
+										MTU:                     ntep.MTU,
+										LAG:                     ntep.LAG,
 										Vlans:                   make([]*apiv1.Vlan, 0),
 									}
 									device := &apiv1.Device{
@@ -91,13 +89,13 @@ func (c *workerController) constructWorkloadUpdates() map[string]*apiv1.WorkLoad
 										DeviceIdentifierType: d.DeviceIdentifierType,
 										Endpoints:            make([]*apiv1.Endpoint, 0),
 									}
-									idxep = 0
-									idxdev = idxdev2
+									idxNewEpPerDev[idxNewDev] = 0
 									newWorkloadStatus[wlName].Devices = append(newWorkloadStatus[wlName].Devices, device)
-									newWorkloadStatus[wlName].Devices[idxdev].Endpoints = append(newWorkloadStatus[wlName].Devices[idxdev].Endpoints, endpoint)
-									newWorkloadStatus[wlName].Devices[idxdev].Endpoints[idxep].Vlans = append(newWorkloadStatus[wlName].Devices[idxdev].Endpoints[idxep].Vlans, vlan)
-									idxdev2++
-									idxep++
+									newWorkloadStatus[wlName].Devices[idxNewDev].Endpoints = append(newWorkloadStatus[wlName].Devices[idxNewDev].Endpoints, endpoint)
+									newWorkloadStatus[wlName].Devices[idxNewDev].Endpoints[idxNewEpPerDev[idxNewDev]].Vlans = append(newWorkloadStatus[wlName].Devices[idxNewDev].Endpoints[idxNewEpPerDev[idxNewDev]].Vlans, vlan)
+									idxNewEpPerDev[idxNewDev]++
+									idxNewDev++
+
 								}
 							}
 						}
@@ -126,24 +124,24 @@ func (c *workerController) compareWorkloadStatus(newWorkLoadStatus map[string]*a
 				c.WorkLoad[wlName].Status.DeepCopy()
 				c.WorkLoad[wlName].DeepCopy()
 
-				fmt.Printf("Workload name: %v\n", c.WorkLoad[wlName].Name)
-				fmt.Printf("Workload namespace: %v\n", c.WorkLoad[wlName].Namespace)
-				fmt.Printf("Workload spec  config: %v\n", c.WorkLoad[wlName].Spec)
-				fmt.Printf("Workload status running config: %v\n", c.WorkLoad[wlName].Status.RunningConfig)
+				log.Debugf("Workload name: %v\n", c.WorkLoad[wlName].Name)
+				log.Debugf("Workload namespace: %v\n", c.WorkLoad[wlName].Namespace)
+				log.Debugf("Workload spec  config: %v\n", c.WorkLoad[wlName].Spec)
+				log.Debugf("Workload status running config: %v\n", c.WorkLoad[wlName].Status.RunningConfig)
 				for _, device := range c.WorkLoad[wlName].Status.Devices {
-					fmt.Printf("Workload status devices: %v\n", device)
+					log.Debugf("Workload status devices: %v\n", device)
 				}
 				c.WorkLoad[wlName], err = c.wli.Update(c.ctx, c.WorkLoad[wlName], metav1.UpdateOptions{})
 				c.WorkLoad[wlName].DeepCopy()
 				if err != nil {
-					klog.Error(err)
+					log.Error(err)
 				}
 
-				klog.Info("update workload status to the k8s fsc api")
+				log.Info("update workload status to the k8s fsc api")
 				workLoadChangeFlag[wlName] = true
 			}
 			// No UPDATE REQUIRED
-			klog.Info("No workload status update required to the k8s fsc api")
+			log.Info("No workload status update required to the k8s fsc api")
 			workLoadChangeFlag[wlName] = false
 		} else {
 			// new workload
@@ -153,20 +151,20 @@ func (c *workerController) compareWorkloadStatus(newWorkLoadStatus map[string]*a
 			c.WorkLoad[wlName].Status.DeepCopy()
 			c.WorkLoad[wlName].DeepCopy()
 
-			fmt.Printf("Workload name: %v\n", c.WorkLoad[wlName].Name)
-			fmt.Printf("Workload namespace: %v\n", c.WorkLoad[wlName].Namespace)
-			fmt.Printf("Workload spec  config: %v\n", c.WorkLoad[wlName].Spec)
-			fmt.Printf("Workload status running config: %v\n", c.WorkLoad[wlName].Status.RunningConfig)
+			log.Debugf("Workload name: %v\n", c.WorkLoad[wlName].Name)
+			log.Debugf("Workload namespace: %v\n", c.WorkLoad[wlName].Namespace)
+			log.Debugf("Workload spec  config: %v\n", c.WorkLoad[wlName].Spec)
+			log.Debugf("Workload status running config: %v\n", c.WorkLoad[wlName].Status.RunningConfig)
 			for _, device := range c.WorkLoad[wlName].Status.Devices {
-				fmt.Printf("Workload status devices: %v\n", device)
+				log.Debugf("Workload status devices: %v\n", device)
 			}
 			c.WorkLoad[wlName], err = c.wli.Update(c.ctx, c.WorkLoad[wlName], metav1.UpdateOptions{})
 			c.WorkLoad[wlName].DeepCopy()
 			if err != nil {
-				klog.Error(err)
+				log.Error(err)
 			}
 
-			klog.Info("update workload status to the k8s fsc api")
+			log.Info("update workload status to the k8s fsc api")
 		}
 	}
 	// check if a workload got deleted
@@ -174,7 +172,7 @@ func (c *workerController) compareWorkloadStatus(newWorkLoadStatus map[string]*a
 		if _, ok := workLoadChangeFlag[wlName]; !ok {
 			// deleted workload
 			// The Delete should have happpend already so this can be avoided
-			klog.Info("delete workload status to the k8s fsc api")
+			log.Info("delete workload status to the k8s fsc api")
 		}
 	}
 	c.WorkLoadStatus = newWorkLoadStatus
@@ -182,16 +180,17 @@ func (c *workerController) compareWorkloadStatus(newWorkLoadStatus map[string]*a
 
 func (c *workerController) showWorkLoads() {
 	for wlName, wls := range c.WorkLoadStatus {
-		fmt.Printf("Workload Name: %s\n", wlName)
-		fmt.Printf("  Running Config: %v\n", wls.RunningConfig)
+		log.Debugf("Workload Name: %s\n", wlName)
+		log.Debugf("  Running Config: %v\n", wls.RunningConfig)
 		for _, d := range wls.Devices {
-			fmt.Printf("  Device Name %s\n", d.Name)
-			fmt.Printf("  Device Attaributes %v\n", *d)
+			log.Debugf("  Device Name %s\n", d.Name)
+			log.Debugf("  Device Attaributes %v\n", *d)
 			for _, ep := range d.Endpoints {
-				fmt.Printf("    Endpoint Name %s\n", ep.Name)
-				fmt.Printf("    Endpoint Attaributes %v\n", *ep)
+				log.Debugf("    Endpoint Name %s\n", ep.Name)
+				log.Debugf("    Endpoint InterfaceIdentifier %s\n", ep.InterfaceIdentifier)
+				log.Debugf("    Endpoint Attributes %v\n", *ep)
 				for _, v := range ep.Vlans {
-					fmt.Printf("    Vlan ID %d\n", v.ID)
+					log.Debugf("    Vlan ID %d\n", v.ID)
 				}
 			}
 		}

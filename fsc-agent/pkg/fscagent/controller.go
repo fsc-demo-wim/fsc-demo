@@ -3,18 +3,18 @@ package fscagent
 import (
 	"context"
 
-	"github.com/henderiw/fsc-demo/fsc-agent/pkg/controllers/configmap"
-	"github.com/henderiw/fsc-demo/fsc-agent/pkg/controllers/fscagentctrlr"
-	"github.com/henderiw/fsc-demo/fsc-agent/pkg/controllers/multus"
-	"github.com/henderiw/fsc-demo/common/controllers/timer"
+	"github.com/fsc-demo-wim/fsc-demo/common/controllers/timer"
+	"github.com/fsc-demo-wim/fsc-demo/fsc-agent/pkg/controllers/configmap"
+	"github.com/fsc-demo-wim/fsc-demo/fsc-agent/pkg/controllers/fscagentctrlr"
+	"github.com/fsc-demo-wim/fsc-demo/fsc-agent/pkg/controllers/multus"
 
-	"github.com/henderiw/fsc-demo/common/msg"
+	"github.com/fsc-demo-wim/fsc-demo/common/msg"
 
-	"github.com/henderiw/fsc-demo/common/controller"
+	"github.com/fsc-demo-wim/fsc-demo/common/controller"
 
-	"github.com/henderiw/fsc-demo/common/client"
-	"github.com/henderiw/fsc-demo/common/status"
-	"k8s.io/klog"
+	"github.com/fsc-demo-wim/fsc-demo/common/client"
+	"github.com/fsc-demo-wim/fsc-demo/common/status"
+	log "github.com/sirupsen/logrus"
 )
 
 // Object for keeping track of controller states and statuses.
@@ -51,7 +51,7 @@ func (fa *FscAgent) InitControllers() error {
 	if fa.HealthEnabled {
 		// Create the status file. We will only update it if we have healthchecks enabled.
 		s := status.New(status.DefaultStatusFile)
-		klog.Info("Starting status report routine")
+		log.Info("Starting status report routine")
 		go status.RunHealthChecks(ctx, s, fa.Clients.K8sClient)
 	}
 
@@ -74,7 +74,7 @@ func (cc *controllerControl) InitControllers(ctx context.Context, clients *clien
 	cc.controllers["ConfigMap"] = configMapController
 
 	fscAgentController := fscagentctrlr.NewController(ctx, clients.FscClient)
-	cc.controllers["Worker"] = fscAgentController
+	cc.controllers["FscAgent"] = fscAgentController
 
 	timerController := timer.NewController(ctx)
 	cc.controllers["Timer"] = timerController
@@ -84,14 +84,14 @@ func (cc *controllerControl) InitControllers(ctx context.Context, clients *clien
 // Runs all the controllers and blocks until we get a restart.
 func (cc *controllerControl) RunControllers() {
 	for kind, c := range cc.controllers {
-		klog.Infof("Starting controller kind %s", kind)
+		log.Infof("Starting controller kind %s", kind)
 		go c.Run(cc.stopCh, cc.workCh)
 	}
 
 	// Block until we are cancelled, or get a new configuration and need to restart
 	select {
 	case <-cc.ctx.Done():
-		klog.Warning("context cancelled")
+		log.Warning("context cancelled")
 	}
 	close(cc.stopCh)
 }

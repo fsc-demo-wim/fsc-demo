@@ -1,0 +1,49 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: fsc-agent-ds
+  namespace: fsc
+  labels:
+    k8s-app: fscagent
+spec:
+  selector:
+    matchLabels:
+      k8s-app: fscagent
+  template:
+    metadata:
+      labels:
+        k8s-app: fscagent
+    spec:
+      nodeSelector:
+        kubernetes.io/os: linux
+      serviceAccountName: fsc-serviceaccount
+      containers:
+      - name: fsc-agent
+        image: henderiw/fsc-demo-agent:v0.1.0
+        imagePullPolicy: Always
+        env:
+          - name: NODE_NAME
+            valueFrom:
+              fieldRef:
+                fieldPath: spec.nodeName
+        securityContext:
+          allowPrivilegeEscalation: true
+          capabilities:
+            add: ["NET_ADMIN"]
+        volumeMounts:
+        - name: cgroup
+          mountPath: /sys/fs/cgroup
+        - name: lldpd
+          mountPath: /var/run/lldpd.socket
+        - name: netlinkd
+          mountPath: /tmp/netlink.sock
+      volumes:
+      - name: cgroup
+        hostPath:
+          path : /sys/fs/cgroup
+      - name: lldpd
+        hostPath:
+          path : /var/run/lldpd.socket
+      - name: netlinkd
+        hostPath:
+          path : /tmp/netlink.sock

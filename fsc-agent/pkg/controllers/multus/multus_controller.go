@@ -7,14 +7,14 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/henderiw/fsc-demo/common/controller"
-	"github.com/henderiw/fsc-demo/common/msg"
+	"github.com/fsc-demo-wim/fsc-demo/common/controller"
+	"github.com/fsc-demo-wim/fsc-demo/common/msg"
 	v1 "github.com/k8snetworkplumbingwg/network-attachment-definition-client/pkg/apis/k8s.cni.cncf.io/v1"
 	netclient "github.com/k8snetworkplumbingwg/network-attachment-definition-client/pkg/client/clientset/versioned"
+	log "github.com/sirupsen/logrus"
 	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/util/runtime"
 	uruntime "k8s.io/apimachinery/pkg/util/runtime"
-	"k8s.io/klog"
 
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/util/workqueue"
@@ -67,7 +67,7 @@ func parseConfig(obj interface{}) (*NetwAtt, error) {
 	if err != nil {
 		return nil, err
 	}
-	//log.Infof("Multus NetwAtachDef info: %s %s %s %d", c.Name, c.Type, c.Master, c.Vlan)
+	log.Debugf("Multus NetwAtachDef info: %s %s %s %d", c.Name, c.Type, c.Master, c.Vlan)
 
 	// Initialize new NetwAtt struct with the information received from the Multus API server
 	na := new(NetwAtt)
@@ -76,12 +76,12 @@ func parseConfig(obj interface{}) (*NetwAtt, error) {
 		var rn string
 		var ok bool
 		if rn, ok = annotations["k8s.v1.cni.cncf.io/resourceName"]; ok {
-			klog.Infof("ResourceName: %s", rn)
+			log.Debugf("ResourceName: %s", rn)
 			itfceName = SriovCfg[rn]
 
 		}
-		klog.Infof("NameSpace %s Interfaces to be monitored: %s, vlan: %d", ns, itfceName, c.Vlan)
-		klog.Infof("ResourceName2: %s", rn)
+		log.Debugf("NameSpace %s Interfaces to be monitored: %s, vlan: %d", ns, itfceName, c.Vlan)
+		log.Debugf("ResourceName2: %s", rn)
 		na = &NetwAtt{
 			Kind:         c.Type,
 			Vlan:         c.Vlan,
@@ -93,9 +93,9 @@ func parseConfig(obj interface{}) (*NetwAtt, error) {
 		if len(split) > 1 {
 			vlan, err := strconv.Atoi(split[1])
 			if err != nil {
-				klog.Error(err)
+				log.Error(err)
 			}
-			klog.Infof("NameSpace %s Interfaces to be monitored: %s, vlan: %d", ns, split[0], vlan)
+			log.Debugf("NameSpace %s Interfaces to be monitored: %s, vlan: %d", ns, split[0], vlan)
 			na = &NetwAtt{
 				Kind:      c.Type,
 				Vlan:      vlan,
@@ -103,7 +103,7 @@ func parseConfig(obj interface{}) (*NetwAtt, error) {
 				Ns:        ns,
 			}
 		} else {
-			klog.Infof("NameSpace %s Interfaces to be monitored: %s, vlan: %d", ns, split[0], 0)
+			log.Debugf("NameSpace %s Interfaces to be monitored: %s, vlan: %d", ns, split[0], 0)
 			na = &NetwAtt{
 				Kind:      c.Type,
 				Vlan:      0,
@@ -119,11 +119,11 @@ func parseConfig(obj interface{}) (*NetwAtt, error) {
 // multusController implements the Controller interface for managing Kubernetes object
 // and syncing them to the datastore as Profiles.
 type multusController struct {
-	indexer      cache.Indexer
-	informer     cache.Controller
-	ctx          context.Context
-	queue        workqueue.RateLimitingInterface
-	workCh       chan msg.CMsg
+	indexer  cache.Indexer
+	informer cache.Controller
+	ctx      context.Context
+	queue    workqueue.RateLimitingInterface
+	workCh   chan msg.CMsg
 }
 
 // NewController returns a controller which manages multus objects.
@@ -142,31 +142,31 @@ func NewController(ctx context.Context, Client *netclient.Clientset) controller.
 		AddFunc: func(obj interface{}) {
 			key, err := cache.MetaNamespaceKeyFunc(obj)
 			if err != nil {
-				klog.Errorf("Failed to generate key %s", err)
+				log.Errorf("Failed to generate key %s", err)
 				return
 			}
 			queue.Add(key)
-			klog.Infof("Got ADD event for network-attachment-definitions: %s", key)
+			log.Infof("Got ADD event for network-attachment-definitions: %s", key)
 
 		},
 		UpdateFunc: func(oldObj interface{}, newObj interface{}) {
 			key, err := cache.MetaNamespaceKeyFunc(newObj)
 			if err != nil {
-				klog.Errorf("Failed to generate key %s", err)
+				log.Errorf("Failed to generate key %s", err)
 				return
 			}
 			queue.Add(key)
-			klog.Infof("Got UPDATE event for network-attachment-definitions: %s", key)
+			log.Infof("Got UPDATE event for network-attachment-definitions: %s", key)
 
 		},
 		DeleteFunc: func(obj interface{}) {
 			key, err := cache.DeletionHandlingMetaNamespaceKeyFunc(obj)
 			if err != nil {
-				klog.Errorf("Failed to generate key %s", err)
+				log.Errorf("Failed to generate key %s", err)
 				return
 			}
 			queue.Add(key)
-			klog.Infof("Got DELETE event for network-attachment-definitions: %s", key)
+			log.Infof("Got DELETE event for network-attachment-definitions: %s", key)
 
 		},
 	}, cache.Indexers{})
@@ -182,15 +182,15 @@ func (c *multusController) Run(stopCh chan struct{}, workCh chan msg.CMsg) {
 	// Let the workers stop when we are done
 	defer c.queue.ShutDown()
 
-	klog.Info("Starting Multus controller")
+	log.Info("Starting Multus controller")
 
 	// Wait till k8s cache is synced
 	go c.informer.Run(stopCh)
-	klog.Info("Waiting to sync with Kubernetes API (Multus)")
+	log.Info("Waiting to sync with Kubernetes API (Multus)")
 
 	for !c.informer.HasSynced() {
 	}
-	klog.Infof("Finished syncing with Kubernetes API (Multus)")
+	log.Infof("Finished syncing with Kubernetes API (Multus)")
 
 	if !cache.WaitForCacheSync(stopCh, c.informer.HasSynced) {
 		runtime.HandleError(fmt.Errorf("Timed out waiting for caches to sync"))
@@ -201,10 +201,10 @@ func (c *multusController) Run(stopCh chan struct{}, workCh chan msg.CMsg) {
 	for i := 0; i < workerthreads; i++ {
 		go c.runWorker()
 	}
-	klog.Info("Multus controller is now running")
+	log.Info("Multus controller is now running")
 
 	<-stopCh
-	klog.Info("Stopping Multus controller")
+	log.Info("Stopping Multus controller")
 }
 
 func (c *multusController) runWorker() {
@@ -226,55 +226,44 @@ func (c *multusController) processNextItem() bool {
 	defer c.queue.Done(key)
 
 	// Invoke the method containing the business logic
-	err := c.syncToStdout(key.(string))
+	err := c.process(key.(string))
 	// Handle the error if something went wrong during the execution of the business logic
 	c.handleErr(err, key)
 
 	return true
 }
 
-// syncToStdout is the business logic of the controller. In this controller it simply prints
-// information about the object to stdout. In case an error happened, it has to simply return the error.
-// The retry logic should not be part of the business logic.
-func (c *multusController) syncToStdout(key string) error {
+// process is the business logic of the controller. We parse the multusconfig and send a message to the
+// fscagent controller where the real processing happens
+func (c *multusController) process(key string) error {
 	obj, exists, err := c.indexer.GetByKey(key)
 	if err != nil {
-		klog.Errorf("Fetching object with key %s from store failed with %v", key, err)
+		log.Errorf("Fetching object with key %s from store failed with %v", key, err)
 		return err
 	}
 
 	if !exists {
 		// Below we will warm up our cache with a Pod, so that we will see a delete for one pod
-		klog.Infof("network-attachment-definition %s does not exist anymore", key)
+		log.Infof("network-attachment-definition %s does not exist anymore", key)
 		nwa := make(map[string]NetwAtt)
 		nwa[key] = NetwAtt{}
 		m := msg.CMsg{
-			Type:      msg.MultusDelete,
-			KeyValue:    nwa,
+			Type:     msg.MultusDelete,
+			KeyValue: nwa,
 			RespChan: nil,
 		}
 		c.workCh <- m
 	} else {
-		// Note that you also have to check the uid if you have a local controlled resource, which
-		// is dependent on the actual instance, to detect that a Pod was recreated with the same name
-		//log.Infof("Sync/Add/Update for network-attachment-definition %s", obj.(*v1.NetworkAttachmentDefinition).GetName())
-		//log.Infof("network-attachment-definition Namespace %v", obj.(*v1.NetworkAttachmentDefinition).GetNamespace())
-		//log.Infof("network-attachment-definition Kind %v", obj.(*v1.NetworkAttachmentDefinition).GetObjectKind())
-		//log.Infof("network-attachment-definition Meta %v", obj.(*v1.NetworkAttachmentDefinition).GetObjectMeta())
-		//log.Infof("network-attachment-definition Meta %v", obj.(*v1.NetworkAttachmentDefinition).GetManagedFields())
-		//log.Infof("network-attachment-definition config %v", obj.(*v1.NetworkAttachmentDefinition).Spec.Config)
-		//log.Infof("network-attachment-definition Namespace %v", obj.(*v1.NetworkAttachmentDefinition).GetAnnotations())
-
 		na, err := parseConfig(obj)
 		if err != nil {
-			klog.Error(err)
+			log.Error(err)
 		} else {
 			nwa := make(map[string]NetwAtt)
 			fmt.Printf("NetwAttach send to worker: %v\n", *na)
 			nwa[key] = *na
 			m := msg.CMsg{
-				Type:      msg.MultusUpdate,
-				KeyValue:    nwa,
+				Type:     msg.MultusUpdate,
+				KeyValue: nwa,
 				RespChan: nil,
 			}
 			c.workCh <- m
@@ -300,7 +289,7 @@ func (c *multusController) handleErr(err error, key interface{}) {
 	if c.queue.NumRequeues(key) < 5 {
 		// Re-enqueue the key rate limited. Based on the rate limiter on the
 		// queue and the re-enqueue history, the key will be processed later again.
-		klog.Errorf("Error syncing Profile %v: %v", key, err)
+		log.Errorf("Error syncing Profile %v: %v", key, err)
 		c.queue.AddRateLimited(key)
 		return
 	}
@@ -308,5 +297,5 @@ func (c *multusController) handleErr(err error, key interface{}) {
 
 	// Report to an external entity that, even after several retries, we could not successfully process this key
 	uruntime.HandleError(err)
-	klog.Errorf("Dropping %q out of the queue: %v", key, err)
+	log.Errorf("Dropping %q out of the queue: %v", key, err)
 }

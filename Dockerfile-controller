@@ -1,3 +1,5 @@
 FROM alpine
 
-COPY bin/linux/fsc-controller /fsc-controller
+COPY bin/linux/fsc-controller ./fsc-controller
+
+CMD ["./fsc-controller", "start"]

@@ -1,3 +1,7 @@
-FROM alpine
+FROM ubuntu
 
-COPY bin/linux/fsc-agent /fsc-agent
+RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install --no-install-recommends -y lldpd
+
+COPY bin/linux/fsc-agent ./fsc-agent
+
+CMD ["./fsc-agent", "start"]

@@ -1,0 +1,27 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fscctrlr-deployment
+  namespace: fsc
+  labels:
+    k8s-app: fscctrlr
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      k8s-app: fscctrlr
+  template:
+    metadata:
+      labels:
+        k8s-app: fscctrlr
+    spec:
+      nodeSelector:
+        kubernetes.io/os: linux
+      serviceAccountName: fsc-serviceaccount
+      containers:
+      - name: fsc-controller
+        image: henderiw/fsc-demo-controller:v0.1.0
+        imagePullPolicy: Always
+#        command:
+#        - /fsc-controller start
+

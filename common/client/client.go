@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"time"
 
-	fscclient "github.com/henderiw/fsc-lib-go/pkg/client/clientset/versioned"
+	fscclient "github.com/fsc-demo-wim/fsc-lib-go/pkg/client/clientset/versioned"
 	netclient "github.com/k8snetworkplumbingwg/network-attachment-definition-client/pkg/client/clientset/versioned"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"

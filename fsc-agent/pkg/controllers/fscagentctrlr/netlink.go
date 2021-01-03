@@ -1,33 +1,85 @@
 package fscagentctrlr
 
 import (
+	"encoding/json"
 	"fmt"
+	"net"
 	"reflect"
 	"strconv"
 	"strings"
 
+	log "github.com/sirupsen/logrus"
+
+	"github.com/fsc-demo-wim/netlinkd/netlinktypes"
 	"github.com/vishvananda/netlink"
 )
 
-// UpdateLinkCache function
-func (c *workerController) UpdateLinkCache() error {
-	nll, err := netlink.LinkList()
+// CheckNetLinkDaemon function validates connectivity to the netlink daemon
+func CheckNetLinkDaemon() error {
+	conn, err := net.Dial("unix", "/tmp/netlink.sock")
 	if err != nil {
 		return err
 	}
+	defer conn.Close()
+
+	_, err = conn.Write([]byte("give me netlink hosts status"))
+	if err != nil {
+		log.Fatal("write error:", err)
+	}
+
+	d := json.NewDecoder(conn)
+	var nll []netlinktypes.Link
+	err = d.Decode(&nll)
+
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+// get the netlink information via the linux socket
+func getNetLinkInfoFromHost() (*[]netlinktypes.Link, error) {
+	conn, err := net.Dial("unix", "/tmp/netlink.sock")
+	if err != nil {
+		return nil, err
+	}
+	defer conn.Close()
+
+	_, err = conn.Write([]byte("give me netlink hosts status"))
+	if err != nil {
+		log.Fatal("write error:", err)
+	}
+
+	d := json.NewDecoder(conn)
+	var nll []netlinktypes.Link
+	err = d.Decode(&nll)
+
+	if err != nil {
+		return nil, err
+	}
+	return &nll, nil
+}
+
+// UpdateNetLinkCache function
+func (c *workerController) UpdateNetLinkCache() error {
+	nll, err := getNetLinkInfoFromHost()
+	if err != nil {
+		return err
+	}
+	// loop over the multus information
 	for netwAttName, na := range *c.multusConfig {
-		for _, l := range nll {
-			//fmt.Printf("NetLink: %s, %d %d\n", l.Attrs().Name, l.Attrs().ParentIndex, l.Attrs().MasterIndex)
+		for _, l := range *nll {
+			log.Infof("NetLink: %s, %d %d", l.Name, l.ParentIndex, l.MasterIndex)
 			switch na.Kind {
 			case "sriov":
 				// We only care about interfaces that are configured through the multus
 				// configuration as network attachement definitions;
 				// Check if the multus interface name and netlink interface name match
-				if na.ItfceName == l.Attrs().Name {
-					if cl, ok := (*c.linkCache)[l.Attrs().Name]; ok {
+				if na.ItfceName == l.Name {
+					if cl, ok := (*c.linkCache)[l.Name]; ok {
 						// link exists in cache
 						// check if vf changed
-						for _, vf := range l.Attrs().Vfs {
+						for _, vf := range l.Vfs {
 							if vf.Vlan != 0 {
 								if la, ok := cl[vf.Vlan]; ok {
 									var ns string
@@ -35,20 +87,20 @@ func (c *workerController) UpdateLinkCache() error {
 									// we lookup multiple vlans from the ifName which gives wrong results
 									// we need to lookup back in the multus config db to find the namespace
 									for _, v := range *c.multusConfig {
-										if v.ItfceName ==  l.Attrs().Name && v.Vlan == vf.Vlan {
+										if v.ItfceName == l.Name && v.Vlan == vf.Vlan {
 											ns = v.Ns
 										}
 									}
-									c.updateLinkVlanInCache(l, la, ns)
+									c.updateSocketLinkVlanInCache(l, la, ns)
 								}
 							}
 						}
 					} else {
 						// link does not exists in cache
-						(*c.linkCache)[l.Attrs().Name] = make(map[int]*LinkAttr)
-						for _, vf := range l.Attrs().Vfs {
+						(*c.linkCache)[l.Name] = make(map[int]*LinkAttr)
+						for _, vf := range l.Vfs {
 							if vf.Vlan != 0 {
-								c.addLinkVlan2Cache(l, vf.Vlan, netwAttName)
+								c.addSocketLinkVlan2Cache(l, vf.Vlan, netwAttName)
 							}
 						}
 					}
@@ -58,17 +110,17 @@ func (c *workerController) UpdateLinkCache() error {
 				// configuration as network attachement definitions;
 				// check if the multus interface name and netlink interface name match.
 				// For ipvlan we use <interfaceName>.<vlan> notation
-				if na.ItfceName+"."+strconv.Itoa(na.Vlan) == l.Attrs().Name {
+				if na.ItfceName+"."+strconv.Itoa(na.Vlan) == l.Name {
 
-					if cl, ok := (*c.linkCache)[l.Attrs().Name]; ok {
+					if cl, ok := (*c.linkCache)[l.Name]; ok {
 						// link exists in cache
 						if la, ok := cl[na.Vlan]; ok {
-							c.updateLinkVlanInCache(l, la, netwAttName)
+							c.updateSocketLinkVlanInCache(l, la, netwAttName)
 						}
 					} else {
 						// link does not exists in cache
-						(*c.linkCache)[l.Attrs().Name] = make(map[int]*LinkAttr)
-						c.addLinkVlan2Cache(l, na.Vlan, netwAttName)
+						(*c.linkCache)[l.Name] = make(map[int]*LinkAttr)
+						c.addSocketLinkVlan2Cache(l, na.Vlan, netwAttName)
 					}
 				}
 			}
@@ -89,9 +141,9 @@ func (c *workerController) UpdateLinkCache() error {
 						// slave interfaces have master index 10
 						origSlaveLinks := la.SlaveLinks
 						la.SlaveLinks = make([]string, 0)
-						for _, l := range nll {
-							if l.Attrs().MasterIndex == la.ParentIndex {
-								la.SlaveLinks = append(la.SlaveLinks, l.Attrs().Name)
+						for _, l := range *nll {
+							if l.MasterIndex == la.ParentIndex {
+								la.SlaveLinks = append(la.SlaveLinks, l.Name)
 							}
 						}
 						// check if there is a change in the slave link
@@ -110,6 +162,17 @@ func (c *workerController) UpdateLinkCache() error {
 	return nil
 }
 
+func (c *workerController) addSocketLinkVlan2Cache(l netlinktypes.Link, vlan int, netwAttName string) {
+	(*c.linkCache)[l.Name][vlan] = &LinkAttr{
+		ChangeFlag:   "newlyAdded",
+		HardwareAddr: l.HardwareAddr,
+		MTU:          l.MTU,
+		OperState:    l.OperState,
+		ParentIndex:  l.ParentIndex,
+		NameSpace:    getNameSpaceFromString(netwAttName),
+	}
+}
+
 func (c *workerController) addLinkVlan2Cache(l netlink.Link, vlan int, netwAttName string) {
 	(*c.linkCache)[l.Attrs().Name][vlan] = &LinkAttr{
 		ChangeFlag:   "newlyAdded",
@@ -125,36 +188,61 @@ func getNameSpaceFromString(netwAttName string) string {
 	return strings.Split(netwAttName, "/")[0]
 }
 
+func (c *workerController) updateSocketLinkVlanInCache(l netlinktypes.Link, la *LinkAttr, netwAttName string) {
+	la.ChangeFlag = "noChange"
+	if la.HardwareAddr != l.HardwareAddr {
+		la.ChangeFlag = "stateChange"
+	}
+	if la.MTU != l.MTU {
+		log.Debugf("MTU CHANGE: %v, %v ", la.MTU, l.MTU)
+		la.ChangeFlag = "configChange"
+	}
+	if la.OperState != l.OperState {
+		log.Debugf("OPERSTATE CHANGE: %v, %v ", la.OperState, l.OperState)
+		la.ChangeFlag = "configChange"
+	}
+	if la.ParentIndex != l.ParentIndex {
+		log.Debugf("PARENTINDEX CHANGE: %v, %v ", la.ParentIndex, l.ParentIndex)
+		la.ChangeFlag = "configChange"
+	}
+	/*
+		if la.NameSpace != getNameSpaceFromString(netwAttName) {
+			log.Debugf("NAMESPACE CHANGE: %v, %v ", la.NameSpace,  getNameSpaceFromString(netwAttName))
+			la.ChangeFlag = "configChange"
+		}
+	*/
+}
+
 func (c *workerController) updateLinkVlanInCache(l netlink.Link, la *LinkAttr, netwAttName string) {
 	la.ChangeFlag = "noChange"
 	if la.HardwareAddr != l.Attrs().HardwareAddr.String() {
 		la.ChangeFlag = "stateChange"
 	}
 	if la.MTU != l.Attrs().MTU {
-		fmt.Printf("MTU CHANGE: %v, %v \n", la.MTU, l.Attrs().MTU)
+		log.Debugf("MTU CHANGE: %v, %v ", la.MTU, l.Attrs().MTU)
 		la.ChangeFlag = "configChange"
 	}
 	if la.OperState != l.Attrs().OperState.String() {
-		fmt.Printf("OPERSTATE CHANGE: %v, %v \n", la.OperState, l.Attrs().OperState.String())
+		log.Debugf("OPERSTATE CHANGE: %v, %v ", la.OperState, l.Attrs().OperState.String())
 		la.ChangeFlag = "configChange"
 	}
 	if la.ParentIndex != l.Attrs().ParentIndex {
-		fmt.Printf("PARENTINDEX CHANGE: %v, %v \n", la.ParentIndex, l.Attrs().ParentIndex)
+		log.Debugf("PARENTINDEX CHANGE: %v, %v ", la.ParentIndex, l.Attrs().ParentIndex)
 		la.ChangeFlag = "configChange"
 	}
 	/*
-	if la.NameSpace != getNameSpaceFromString(netwAttName) {
-		fmt.Printf("NAMESPACE CHANGE: %v, %v \n", la.NameSpace,  getNameSpaceFromString(netwAttName))
-		la.ChangeFlag = "configChange"
-	}
+		if la.NameSpace != getNameSpaceFromString(netwAttName) {
+			log.Debugf("NAMESPACE CHANGE: %v, %v ", la.NameSpace,  getNameSpaceFromString(netwAttName))
+			la.ChangeFlag = "configChange"
+		}
 	*/
 }
 
-// ValidateLinkCacheChanges function
-func (c *workerController) ValidateLinkCacheChanges() error {
-	fmt.Println("@@@@@@@@@@@@@@@@@@")
+// ValidateNetLinkCacheChanges function
+func (c *workerController) ValidateNetLinkCacheChanges() error {
+	fmt.Println("ValidateLinkCacheChanges Start....")
 	for itfceName, v := range *c.linkCache {
-		fmt.Printf("Link Cache: %s\n", itfceName)
+		log.Debugf("Link Cache: %s", itfceName)
 		for vlan, la := range v {
 			// validate change flag
 			// when empty: "" -> the link no longer exists
@@ -170,7 +258,7 @@ func (c *workerController) ValidateLinkCacheChanges() error {
 				la.LldpChangeFlag = true
 			}
 
-			fmt.Printf("  VLAN: %d Attributes: %v\n", vlan, *la)
+			log.Debugf("  VLAN: %d Attributes: %v", vlan, *la)
 			// if the vlan no longer exists delete it from the cache
 			if la.ChangeFlag == "toBeDeleted" {
 				delete((*c.linkCache)[itfceName], vlan)
@@ -182,6 +270,6 @@ func (c *workerController) ValidateLinkCacheChanges() error {
 			delete(*c.linkCache, itfceName)
 		}
 	}
-	fmt.Println("@@@@@@@@@@@@@@@@@@")
+	fmt.Println("ValidateLinkCacheChanges Stop ...")
 	return nil
 }

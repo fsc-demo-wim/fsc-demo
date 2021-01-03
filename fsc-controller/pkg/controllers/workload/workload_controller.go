@@ -4,22 +4,21 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/henderiw/fsc-demo/common/controller"
-	"github.com/henderiw/fsc-demo/common/msg"
-	apiv1 "github.com/henderiw/fsc-lib-go/pkg/apis/fsc.henderiw.be/v1"
-	fscclient "github.com/henderiw/fsc-lib-go/pkg/client/clientset/versioned"
+	"github.com/fsc-demo-wim/fsc-demo/common/controller"
+	"github.com/fsc-demo-wim/fsc-demo/common/msg"
+	apiv1 "github.com/fsc-demo-wim/fsc-lib-go/pkg/apis/fsc.henderiw.be/v1"
+	fscclient "github.com/fsc-demo-wim/fsc-lib-go/pkg/client/clientset/versioned"
+	log "github.com/sirupsen/logrus"
 	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/util/runtime"
 	uruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/util/workqueue"
-	"k8s.io/klog"
 )
 
 const workerthreads = 1
 
 // workloadController implements the Controller interface for managing Kubernetes object
-// and syncing them to the datastore as Profiles.
 type workloadController struct {
 	indexer  cache.Indexer
 	informer cache.Controller
@@ -43,31 +42,31 @@ func NewController(ctx context.Context, Client *fscclient.Clientset) controller.
 		AddFunc: func(obj interface{}) {
 			key, err := cache.MetaNamespaceKeyFunc(obj)
 			if err != nil {
-				klog.Errorf("Failed to generate key %s", err)
+				log.Errorf("Failed to generate key %s", err)
 				return
 			}
 			queue.Add(key)
-			klog.Infof("Got ADD event for workloads: %s", key)
+			log.Infof("Got ADD event for workloads: %s", key)
 
 		},
 		UpdateFunc: func(oldObj interface{}, newObj interface{}) {
 			key, err := cache.MetaNamespaceKeyFunc(newObj)
 			if err != nil {
-				klog.Errorf("Failed to generate key %s", err)
+				log.Errorf("Failed to generate key %s", err)
 				return
 			}
 			queue.Add(key)
-			klog.Infof("Got UPDATE event for workloads: %s", key)
+			log.Infof("Got UPDATE event for workloads: %s", key)
 
 		},
 		DeleteFunc: func(obj interface{}) {
 			key, err := cache.DeletionHandlingMetaNamespaceKeyFunc(obj)
 			if err != nil {
-				klog.Errorf("Failed to generate key %s", err)
+				log.Errorf("Failed to generate key %s", err)
 				return
 			}
 			queue.Add(key)
-			klog.Infof("Got DELETE event for workloads: %s", key)
+			log.Infof("Got DELETE event for workloads: %s", key)
 
 		},
 	}, cache.Indexers{})
@@ -83,15 +82,15 @@ func (c *workloadController) Run(stopCh chan struct{}, workCh chan msg.CMsg) {
 	// Let the workers stop when we are done
 	defer c.queue.ShutDown()
 
-	klog.Info("Starting Workload controller...")
+	log.Info("Starting Workload controller...")
 
 	// Wait till k8s cache is synced
 	go c.informer.Run(stopCh)
-	klog.Info("Waiting to sync with Kubernetes API (Workload)")
+	log.Info("Waiting to sync with Kubernetes API (Workload)")
 
 	for !c.informer.HasSynced() {
 	}
-	klog.Infof("Finished syncing with Kubernetes API (Workload)")
+	log.Infof("Finished syncing with Kubernetes API (Workload)")
 
 	if !cache.WaitForCacheSync(stopCh, c.informer.HasSynced) {
 		runtime.HandleError(fmt.Errorf("Timed out waiting for caches to sync"))
@@ -102,10 +101,10 @@ func (c *workloadController) Run(stopCh chan struct{}, workCh chan msg.CMsg) {
 	for i := 0; i < workerthreads; i++ {
 		go c.runWorker()
 	}
-	klog.Info("Workload controller is now running...")
+	log.Info("Workload controller is now running...")
 
 	<-stopCh
-	klog.Info("Stopping Workload controller...")
+	log.Info("Stopping Workload controller...")
 }
 
 func (c *workloadController) runWorker() {
@@ -138,13 +137,13 @@ func (c *workloadController) processNextItem() bool {
 func (c *workloadController) process(key string) error {
 	obj, exists, err := c.indexer.GetByKey(key)
 	if err != nil {
-		klog.Errorf("Fetching object with key %s from store failed with %v", key, err)
+		log.Errorf("Fetching object with key %s from store failed with %v", key, err)
 		return err
 	}
 
 	if !exists {
 		// Below we will warm up our cache with a Pod, so that we will see a delete for one pod
-		klog.Infof("workload %s does not exist anymore", key)
+		log.Infof("workload %s does not exist anymore", key)
 		o := make(map[string]*apiv1.WorkLoad)
 		o[key] = &apiv1.WorkLoad{}
 		m := msg.CMsg{
@@ -163,7 +162,7 @@ func (c *workloadController) process(key string) error {
 			RespChan: nil,
 		}
 		c.workCh <- m
-		klog.Infof("Workload created/updated and send to worker: %v", o)
+		log.Infof("Workload created/updated and send to worker: %v", o)
 	}
 	return nil
 }
@@ -184,7 +183,7 @@ func (c *workloadController) handleErr(err error, key interface{}) {
 	if c.queue.NumRequeues(key) < 5 {
 		// Re-enqueue the key rate limited. Based on the rate limiter on the
 		// queue and the re-enqueue history, the key will be processed later again.
-		klog.Errorf("Error syncing Profile %v: %v", key, err)
+		log.Errorf("Error syncing %v: %v", key, err)
 		c.queue.AddRateLimited(key)
 		return
 	}
@@ -192,5 +191,5 @@ func (c *workloadController) handleErr(err error, key interface{}) {
 
 	// Report to an external entity that, even after several retries, we could not successfully process this key
 	uruntime.HandleError(err)
-	klog.Errorf("Dropping %q out of the queue: %v", key, err)
+	log.Errorf("Dropping %q out of the queue: %v", key, err)
 }

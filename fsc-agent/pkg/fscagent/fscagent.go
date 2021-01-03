@@ -3,7 +3,7 @@ package fscagent
 import (
 	"time"
 
-	"github.com/henderiw/fsc-demo/common/client"
+	"github.com/fsc-demo-wim/fsc-demo/common/client"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -16,27 +16,6 @@ type FscAgent struct {
 
 	debug   bool
 	timeout time.Duration
-}
-
-// Cache hold the ephemiral data of the fsc Agent
-type Cache struct {
-	SriovConfig  *map[string]*string
-	MultusConfig *map[string]*string
-}
-
-// Device is a struct that contains the information of a device element
-type Device struct {
-	Kind      string
-	ID        string
-	IDType    string
-	Endpoints map[string]*Endpoint
-}
-
-// Endpoint is a struct that contains information of a link endpoint
-type Endpoint struct {
-	Device *Device
-	ID     string
-	IDType string
 }
 
 // Option struct

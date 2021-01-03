@@ -1,9 +1,9 @@
 package cmd
 
 import (
-	"github.com/henderiw/fsc-demo/fsc-controller/pkg/fscctrlr"
+	"github.com/fsc-demo-wim/fsc-demo/fsc-controller/pkg/fscctrlr"
+	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
-	"k8s.io/klog"
 )
 
 // deployCmd represents the deploy command
@@ -13,7 +13,7 @@ var initCmd = &cobra.Command{
 	Aliases:      []string{"s"},
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		klog.Info("start fsc-agent ...")
+		log.Info("start fsc-controller ...")
 		opts := []fscctrlr.Option{
 			fscctrlr.WithDebug(debug),
 			fscctrlr.WithTimeout(timeout),
@@ -22,10 +22,10 @@ var initCmd = &cobra.Command{
 
 		fa, err := fscctrlr.New(opts...)
 		if err != nil {
-			klog.Fatalf("Cannot initialize fsc Controller %s", err)
+			log.Fatalf("Cannot initialize fsc Controller %s", err)
 		}
 
-		klog.Info("initialize the controllers...")
+		log.Info("initialize the controllers...")
 		fa.InitControllers()
 
 		return nil

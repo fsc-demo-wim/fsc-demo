@@ -3,7 +3,7 @@ package fscctrlr
 import (
 	"time"
 
-	"github.com/henderiw/fsc-demo/common/client"
+	"github.com/fsc-demo-wim/fsc-demo/common/client"
 	log "github.com/sirupsen/logrus"
 )
 

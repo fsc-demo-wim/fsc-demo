@@ -1,6 +1,6 @@
 package controller
 
-import "github.com/henderiw/fsc-demo/common/msg"
+import "github.com/fsc-demo-wim/fsc-demo/common/msg"
 
 // Controller interface for the functions of the controller
 type Controller interface {

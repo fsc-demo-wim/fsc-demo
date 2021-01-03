@@ -16,7 +16,7 @@ type Config struct {
 }
 
 // sriovParseConfig function
-func sriovParseConfig(data string, sriovConfig *map[string]*string) (error) {
+func sriovParseConfig(data string, sriovConfig *map[string]*string) error {
 	var c Config
 
 	err := json.Unmarshal([]byte(data), &c)

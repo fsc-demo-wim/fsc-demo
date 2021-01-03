@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/henderiw/fsc-demo/common/controller"
-	"github.com/henderiw/fsc-demo/common/msg"
+	"github.com/fsc-demo-wim/fsc-demo/common/controller"
+	"github.com/fsc-demo-wim/fsc-demo/common/msg"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/util/runtime"
@@ -13,13 +13,12 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/util/workqueue"
-	"k8s.io/klog"
+	log "github.com/sirupsen/logrus"
 )
 
 const workerthreads = 1
 
 // nodeController implements the Controller interface for managing Kubernetes object
-// and syncing them to the datastore as Profiles.
 type nodeController struct {
 	indexer  cache.Indexer
 	informer cache.Controller
@@ -43,31 +42,31 @@ func NewController(ctx context.Context, Client *kubernetes.Clientset) controller
 		AddFunc: func(obj interface{}) {
 			key, err := cache.MetaNamespaceKeyFunc(obj)
 			if err != nil {
-				klog.Errorf("Failed to generate key %s", err)
+				log.Errorf("Failed to generate key %s", err)
 				return
 			}
 			queue.Add(key)
-			klog.Infof("Got ADD event for nodes: %s", key)
+			log.Infof("Got ADD event for nodes: %s", key)
 
 		},
 		UpdateFunc: func(oldObj interface{}, newObj interface{}) {
 			key, err := cache.MetaNamespaceKeyFunc(newObj)
 			if err != nil {
-				klog.Errorf("Failed to generate key %s", err)
+				log.Errorf("Failed to generate key %s", err)
 				return
 			}
 			queue.Add(key)
-			klog.Infof("Got UPDATE event for nodes: %s", key)
+			log.Infof("Got UPDATE event for nodes: %s", key)
 
 		},
 		DeleteFunc: func(obj interface{}) {
 			key, err := cache.DeletionHandlingMetaNamespaceKeyFunc(obj)
 			if err != nil {
-				klog.Errorf("Failed to generate key %s", err)
+				log.Errorf("Failed to generate key %s", err)
 				return
 			}
 			queue.Add(key)
-			klog.Infof("Got DELETE event for nodes: %s", key)
+			log.Infof("Got DELETE event for nodes: %s", key)
 
 		},
 	}, cache.Indexers{})
@@ -83,15 +82,15 @@ func (c *nodeController) Run(stopCh chan struct{}, workCh chan msg.CMsg) {
 	// Let the workers stop when we are done
 	defer c.queue.ShutDown()
 
-	klog.Info("Starting Node controller")
+	log.Info("Starting Node controller")
 
 	// Wait till k8s cache is synced
 	go c.informer.Run(stopCh)
-	klog.Info("Waiting to sync with Kubernetes API (Node)")
+	log.Info("Waiting to sync with Kubernetes API (Node)")
 
 	for !c.informer.HasSynced() {
 	}
-	klog.Infof("Finished syncing with Kubernetes API (Node)")
+	log.Infof("Finished syncing with Kubernetes API (Node)")
 
 	if !cache.WaitForCacheSync(stopCh, c.informer.HasSynced) {
 		runtime.HandleError(fmt.Errorf("Timed out waiting for caches to sync"))
@@ -102,10 +101,10 @@ func (c *nodeController) Run(stopCh chan struct{}, workCh chan msg.CMsg) {
 	for i := 0; i < workerthreads; i++ {
 		go c.runWorker()
 	}
-	klog.Info("Node controller is now running")
+	log.Info("Node controller is now running")
 
 	<-stopCh
-	klog.Info("Stopping Node controller")
+	log.Info("Stopping Node controller")
 }
 
 func (c *nodeController) runWorker() {
@@ -138,13 +137,13 @@ func (c *nodeController) processNextItem() bool {
 func (c *nodeController) process(key string) error {
 	obj, exists, err := c.indexer.GetByKey(key)
 	if err != nil {
-		klog.Errorf("Fetching object with key %s from store failed with %v", key, err)
+		log.Errorf("Fetching object with key %s from store failed with %v", key, err)
 		return err
 	}
 
 	if !exists {
 		// Below we will warm up our cache with a Pod, so that we will see a delete for one pod
-		klog.Infof("node %s does not exist anymore", key)
+		log.Infof("node %s does not exist anymore", key)
 		o := make(map[string]*v1.Node)
 		o[key] = &v1.Node{}
 		m := msg.CMsg{
@@ -163,8 +162,8 @@ func (c *nodeController) process(key string) error {
 			RespChan: nil,
 		}
 		c.workCh <- m
-		klog.Infof("Node %s created/updated and send to worker", key)
-		//klog.Infof("Node %s created/updated and send to worker: %v", key, o)
+		log.Infof("Node %s created/updated and send to worker", key)
+		//log.Infof("Node %s created/updated and send to worker: %v", key, o)
 	}
 	return nil
 }
@@ -185,7 +184,7 @@ func (c *nodeController) handleErr(err error, key interface{}) {
 	if c.queue.NumRequeues(key) < 5 {
 		// Re-enqueue the key rate limited. Based on the rate limiter on the
 		// queue and the re-enqueue history, the key will be processed later again.
-		klog.Errorf("Error syncing Profile %v: %v", key, err)
+		log.Errorf("Error syncing  %v: %v", key, err)
 		c.queue.AddRateLimited(key)
 		return
 	}
@@ -193,5 +192,5 @@ func (c *nodeController) handleErr(err error, key interface{}) {
 
 	// Report to an external entity that, even after several retries, we could not successfully process this key
 	uruntime.HandleError(err)
-	klog.Errorf("Dropping %q out of the queue: %v", key, err)
+	log.Errorf("Dropping %q out of the queue: %v", key, err)
 }

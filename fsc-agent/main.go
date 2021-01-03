@@ -1,7 +1,7 @@
 package main
 
 import (
-	"github.com/henderiw/fsc-demo/fsc-agent/cmd"
+	"github.com/fsc-demo-wim/fsc-demo/fsc-agent/cmd"
 )
 
 func main() {

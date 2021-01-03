@@ -6,7 +6,7 @@ import (
 	"os/exec"
 	"strings"
 
-	"k8s.io/klog"
+	log "github.com/sirupsen/logrus"
 )
 
 // Discovery struct
@@ -55,6 +55,20 @@ type ID struct {
 	Value string `json:"value,omitempty"`
 }
 
+// CheckLldpDaemon function
+func CheckLldpDaemon() error {
+	//cmd := exec.Command("systemctl", "check", "lldpd")
+	cmd := exec.Command("lldpcli", "show", "neighbor")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		if exitErr, ok := err.(*exec.ExitError); ok {
+			return fmt.Errorf("systemctl finished with non-zero: %v, status: %s", exitErr, string(out))
+		}
+	}
+	log.Infof("LLDP Systemctl Status is: %s", string(out))
+	return nil
+}
+
 // GetLldpTopology function
 func (c *workerController) getLldpTopology() (*Discovery, error) {
 	cmd := exec.Command("lldpcli", "show", "neighbors", "-f", "json")
@@ -65,7 +79,7 @@ func (c *workerController) getLldpTopology() (*Discovery, error) {
 		}
 		return nil, err
 	}
-	//klog.Infof("Status is: %s\n", string(out))
+	log.Infof("Status is: %s\n", string(out))
 
 	var d Discovery
 	err = json.Unmarshal(out, &d)
@@ -79,7 +93,7 @@ func (c *workerController) getLldpTopology() (*Discovery, error) {
 func (c *workerController) UpdateLldpLinkCache() error {
 	lldpDisc, err := c.getLldpTopology()
 	if err != nil {
-		klog.Errorf("Get LLDP topology failure: %s", err)
+		log.Errorf("Get LLDP topology failure: %s", err)
 	}
 	// loop over the cache to see if we have a matching interface
 	// with the LLDP topology discovery
@@ -157,9 +171,9 @@ func (c *workerController) UpdateLldpLinkCache() error {
 }
 
 func (c *workerController) ValidateLldpLinkCacheChanges() error {
-	fmt.Println("$$$$$$$$$$$$$$$$$$$$$$$$$")
+	log.Info("ValidateLldpLinkCacheChanges start ...")
 	for itfceName, v := range *c.lldpLinkCache {
-		fmt.Printf("LLDP Link Cache: %s\n", itfceName)
+		log.Infof("LLDP Link Cache: %s\n", itfceName)
 		for vlan, lldpep := range v {
 			// validate change flag
 			// when empty: "" -> the link no longer exists
@@ -170,7 +184,7 @@ func (c *workerController) ValidateLldpLinkCacheChanges() error {
 				lldpep.ChangeFlag = "toBeDeleted"
 				break
 			}
-			fmt.Printf("  VLAN: %d Attributes: %v\n", vlan, *lldpep)
+			log.Infof("  VLAN: %d Attributes: %v\n", vlan, *lldpep)
 			// if the vlan no longer exists delete it from the cache
 			if lldpep.ChangeFlag == "toBeDeleted" {
 				delete((*c.lldpLinkCache)[itfceName], vlan)
@@ -182,7 +196,7 @@ func (c *workerController) ValidateLldpLinkCacheChanges() error {
 			delete(*c.lldpLinkCache, itfceName)
 		}
 	}
-	fmt.Println("$$$$$$$$$$$$$$$$$$$$$$$$$")
+	log.Info("ValidateLldpLinkCacheChanges stop ...")
 	return nil
 }
 
